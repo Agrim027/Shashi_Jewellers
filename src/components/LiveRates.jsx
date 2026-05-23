@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, TrendingDown, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+
+const DEFAULT_RATES = {
+  gold18k: "₹ 5,662.50/g",
+  gold24k: "₹ 7,500.00/g",
+  silver: "₹ 90.00/g"
+};
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export default function LiveRates({ compact = false }) {
   const [rates, setRates] = useState({ gold18k: null, gold24k: null, silver: null });
@@ -8,14 +16,16 @@ export default function LiveRates({ compact = false }) {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  const hasFetchedInitially = useRef(false);
 
   const fetchRates = async () => {
     try {
       setIsRefreshing(true);
       setError(null);
-      // Fetching from Spring Boot Backend
-      const response = await fetch('http://localhost:8080/api/live-rates');
-      if (!response.ok) throw new Error('Failed to fetch live rates');
+      
+      const response = await fetch(`${API_BASE_URL}/api/live-rates`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
       const data = await response.json();
       
@@ -32,7 +42,12 @@ export default function LiveRates({ compact = false }) {
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Error fetching rates:', err);
-      setError('Live rates currently unavailable');
+      setError('Live rates temporarily unavailable. Please try again later.');
+      
+      // Fallback logic
+      if (!rates.gold18k) {
+        setRates(DEFAULT_RATES);
+      }
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -40,9 +55,13 @@ export default function LiveRates({ compact = false }) {
   };
 
   useEffect(() => {
-    fetchRates();
-    // Auto refresh every 1 second
-    const interval = setInterval(fetchRates, 1000);
+    if (!hasFetchedInitially.current) {
+      fetchRates();
+      hasFetchedInitially.current = true;
+    }
+    
+    // Auto refresh every 5 minutes (300000 ms)
+    const interval = setInterval(fetchRates, 300000);
     return () => clearInterval(interval);
   }, []);
 
@@ -66,9 +85,14 @@ export default function LiveRates({ compact = false }) {
     return 'neutral';
   };
 
+  // Skeleton Loader for compact view
   if (compact) {
-    if (loading) return <div className="nav-live-rates"><RefreshCw size={14} className="animate-spin" /> Loading rates...</div>;
-    if (error) return null; // Hide in nav if error
+    if (loading && !rates.gold18k) return (
+      <div className="nav-live-rates animate-pulse" style={{ display: 'flex', gap: '15px' }}>
+        <div style={{ height: '20px', width: '80px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px' }}></div>
+        <div style={{ height: '20px', width: '80px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px' }}></div>
+      </div>
+    );
 
     return (
       <div className="nav-live-rates animate-fade-in">
@@ -96,14 +120,28 @@ export default function LiveRates({ compact = false }) {
         </div>
       </div>
 
-      {error ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c42936', padding: '1rem', background: 'rgba(196,41,54,0.05)', borderRadius: '8px' }}>
-          <AlertCircle size={18} />
-          <span style={{ fontSize: '0.9rem' }}>{error}</span>
+      {error && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#c42936', padding: '1rem', background: 'rgba(196,41,54,0.05)', borderRadius: '8px', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={18} />
+            <span style={{ fontSize: '0.9rem' }}>{error}</span>
+          </div>
+          <button 
+            onClick={fetchRates} 
+            disabled={isRefreshing}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: '1px solid #c42936', color: '#c42936', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+          >
+            <RefreshCw size={12} className={isRefreshing ? "animate-spin" : ""} />
+            RETRY
+          </button>
         </div>
-      ) : loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-          <RefreshCw size={24} className="animate-spin" style={{ color: 'var(--gold-primary)' }} />
+      )}
+
+      {loading && !rates.gold18k ? (
+        <div className="rate-cards-grid animate-pulse">
+          <div className="rate-card" style={{ height: '100px', background: 'rgba(0,0,0,0.02)' }}></div>
+          <div className="rate-card" style={{ height: '100px', background: 'rgba(0,0,0,0.02)' }}></div>
+          <div className="rate-card" style={{ height: '100px', background: 'rgba(0,0,0,0.02)' }}></div>
         </div>
       ) : (
         <>
